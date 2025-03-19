@@ -28,36 +28,53 @@ sd_wr = preds.iloc[:, 1].std()
 st.title("D1 Pitch Grade Model")
 
 # Input fields (column-wise tab navigation)
-cols = st.columns(5)
+num_pitches = 5
 user_data = []
 
-for i in range(5):  # Iterate over pitch entries
-    user_data.append({
-        "mean_velo": cols[0].number_input(f"Velo {i+1}", value=90.0),
-        "mean_vmov": cols[1].number_input(f"IVB {i+1}", value=12.0),
-        "mean_hmov": cols[2].number_input(f"H-Mov {i+1}", value=10.0),
-        "mean_spin": cols[3].number_input(f"Spin Rate {i+1}", value=2100.0),
-        "usage": cols[4].number_input(f"Usage {i+1}", value=0.2, min_value=0.0, max_value=1.0, step=0.01)
-    })
+# Define column layout
+cols = st.columns(5)
 
-df_input = pd.DataFrame(user_data)
+# Column-wise input loop (fixes tab order)
+for col_index, col_name in enumerate(["Velo", "IVB", "H-Mov", "Spin Rate", "Usage"]):
+    col_data = []
+    for i in range(num_pitches):
+        value = 0.0  # Default value set to 0
+        min_value = 0.0 if col_name != "Usage" else 0.0
+        max_value = 1.0 if col_name == "Usage" else None
+        step = 0.01 if col_name == "Usage" else None
+        col_data.append(cols[col_index].number_input(f"{col_name} {i+1}", value=value, min_value=min_value, max_value=max_value, step=step))
+    
+    user_data.append(col_data)
+
+# Convert input into DataFrame
+df_input = pd.DataFrame(
+    np.array(user_data).T, 
+    columns=["mean_velo", "mean_vmov", "mean_hmov", "mean_spin", "usage"]
+)
+
 df_input = df_input[df_input['usage'] > 0]  # Remove rows where usage is 0
 
+# Whiff weight input
 whiff_weight = st.number_input("Whiff Weight Percentage:", value=0.75, min_value=0.0, max_value=1.0, step=0.01)
 
+# Ensure valid inputs before making predictions
 if not df_input.empty and np.isclose(df_input['usage'].sum(), 1.0):
     # Ensure X_input has the same structure as X
     X_input = sm.add_constant(df_input[['mean_velo', 'mean_vmov', 'mean_hmov', 'mean_spin']], has_constant='add')
     X_input = X_input[X.columns]  # Ensure same column order as training data
 
+    # Predictions
     pred_vals = mod1.predict(X_input)
 
+    # Standardized grades
     whiff_std = np.round((pred_vals.iloc[:, 1] - mean_wr) / sd_wr * 10 + 50).astype(int)
     ss_std = np.round((pred_vals.iloc[:, 0] - mean_ss) / sd_ss * 10 + 50).astype(int)
 
+    # Overall grades
     overall_grade = np.round(whiff_weight * whiff_std + (1 - whiff_weight) * ss_std).astype(int)
     arsenal_grade = np.round(np.sum(overall_grade * df_input['usage'])).astype(int)
 
+    # Display results
     st.text(f"Arsenal Grade: {arsenal_grade}")
 
     result_df = pd.DataFrame({
