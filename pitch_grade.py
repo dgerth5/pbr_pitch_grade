@@ -1,86 +1,123 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import statsmodels.api as sm
+import statsmodels.formula.api as sm
+import io
+import requests
 
-# Load dataset
+# GitHub raw URL to your model_df.csv file
+csv_url = "https://raw.githubusercontent.com/dgerth5/pbr_pitch_grade/refs/heads/main/model_df.csv"
+
+# Function to load the dataframe
 @st.cache_data
-def load_data():
-    df = pd.read_csv("model_df.csv")
-    df["mean_hmov"] = df["mean_hmov"].abs()  # Absolute value for mean_hmov
-    df.dropna(inplace=True)  # Drop rows with NA values
-    return df
+def load_data(url):
+    """
+    Loads the dataframe from the given URL.  Cached for performance.
+    """
+    try:
+        # Use requests to get the content, which handles potential issues with direct URL access
+        response = requests.get(url)
+        response.raise_for_status()  # Raise an exception for bad status codes
+        csv_content = response.text
+        model_df = pd.read_csv(io.StringIO(csv_content))
+        return model_df
+    except Exception as e:
+        st.error(f"Error loading data: {e}")
+        return None  # Important: Return None on error to prevent further issues
 
-df = load_data()
+# Load the data
+model_df = load_data(csv_url)
+if model_df is None:
+    st.stop() # Stop if the data couldn't be loaded.
 
-# Prepare the models
-ss_model = sm.OLS(df['sweet_spot_rate'], sm.add_constant(pd.get_dummies(df[['mean_velo', 'mean_vmov', 'mean_hmov', 'mean_spin', 'mean_ext', 'AutoPitchType']], drop_first=True))).fit()
-whiff_model = sm.OLS(df['whiff_rate'], sm.add_constant(pd.get_dummies(df[['mean_velo', 'mean_vmov', 'mean_hmov', 'mean_spin', 'mean_ext', 'AutoPitchType']], drop_first=True))).fit()
+# Train the models (outside the main function for efficiency)
+try:
+    # Ensure the necessary columns exist in the DataFrame
+    required_columns = ['sweet_spot_rate', 'mean_velo', 'mean_vmov', 'mean_hmov', 'mean_spin', 'mean_ext', 'AutoPitchType', 'whiff_rate']
+    for col in required_columns:
+        if col not in model_df.columns:
+            st.error(f"Error: Required column '{col}' not found in the data.")
+            st.stop()
 
-# Get mean and std for standardization
-ss_mean = ss_model.fittedvalues.mean()
-ss_std = ss_model.fittedvalues.std()
-whiff_mean = whiff_model.fittedvalues.mean()
-whiff_std = whiff_model.fittedvalues.std()
+    mod_ss = sm.ols(
+        "sweet_spot_rate ~ mean_velo * mean_vmov * abs(mean_hmov) * mean_spin * mean_ext + AutoPitchType",
+        data=model_df,
+    ).fit()
+    mod_whiff = sm.ols(
+        "whiff_rate ~ mean_velo * mean_vmov * abs(mean_hmov) * mean_spin * mean_ext + AutoPitchType",
+        data=model_df,
+    ).fit()
+except Exception as e:
+    st.error(f"Error training models: {e}")
+    st.stop()  # Stop if models fail to train
 
-# Streamlit UI
-st.title("D1 Pitch Grade Model")
 
-num_pitches = 5
-user_data = []
+def predict_rates(input_data):
+    """
+    Predicts 'Whiff Rate' and 'Sweet Spot Rate' based on input data.
 
-cols = st.columns(7)
+    Args:
+        input_data (pd.DataFrame): DataFrame with input features.
 
-for col_index, col_name in enumerate(["Velo", "IVB", "H-Mov", "Spin Rate", "Extension", "Usage", "AutoPitchType"]):
-    col_data = []
-    for i in range(num_pitches):
-        if col_name == "Usage":
-            col_data.append(cols[col_index].number_input(f"{col_name} {i+1}", value=0.0, min_value=0.0, max_value=1.0, step=0.01))
-        elif col_name == "AutoPitchType":
-            pitch_types = ["Curveball", "Cutter", "Four-Seam", "Sinker", "Slider", "Splitter"]
-            col_data.append(cols[col_index].selectbox(f"{col_name} {i+1}", pitch_types, index=2))
+    Returns:
+        pd.DataFrame: DataFrame with predictions.
+    """
+    try:
+        predictions = pd.DataFrame()
+        predictions["Pitch"] = input_data["AutoPitchType"]  # Keep original pitch types
+        predictions["Whiff Rate"] = mod_whiff.predict(input_data)
+        predictions["Sweet Spot Rate"] = mod_ss.predict(input_data)
+        return predictions
+    except Exception as e:
+        st.error(f"Error during prediction: {e}")
+        return pd.DataFrame() # Return empty dataframe in case of error.
+
+def main():
+    """
+    Main function to run the Streamlit app.
+    """
+    st.title("Pitch Rate Predictor")
+
+    # Dropdown options for AutoPitchType
+    pitch_types = ["Curveball", "Cutter", "Four-Seam", "Sinker", "Slider", "Splitter"]
+
+    # Input columns for up to 6 pitches
+    input_data = []
+    for i in range(6):
+        st.subheader(f"Pitch {i+1}")
+        col1, col2, col3, col4, col5 = st.columns(5)
+        with col1:
+            pitch_type = st.selectbox("AutoPitchType", pitch_types, key=f"pitch_type_{i}")
+        with col2:
+            velocity = st.number_input("Velocity", value=90.0, key=f"velocity_{i}")
+        with col3:
+            vmov = st.number_input("V Mov", value=10.0, key=f"vmov_{i}")
+        with col4:
+            hmov = st.number_input("H Mov", value=5.0, key=f"hmov_{i}")
+        with col5:
+            spin_rate = st.number_input("Spin Rate", value=2000.0, key=f"spin_rate_{i}")
+        extension = st.number_input("Extension", value=6.0, key=f"extension_{i}")
+
+        input_data.append({
+            "AutoPitchType": pitch_type,
+            "mean_velo": velocity,
+            "mean_vmov": vmov,
+            "mean_hmov": hmov,
+            "mean_spin": spin_rate,
+            "mean_ext": extension,
+        })
+
+    # Create a DataFrame from the input data
+    input_df = pd.DataFrame(input_data)
+
+    # Predict rates and display results
+    if st.button("Predict Rates"):
+        predictions_df = predict_rates(input_df)
+        if not predictions_df.empty: # Check if the predictions were successful
+            st.subheader("Predicted Rates")
+            st.dataframe(predictions_df,  use_container_width=True)
         else:
-            col_data.append(cols[col_index].number_input(f"{col_name} {i+1}", value=0.0))
-    user_data.append(col_data)
+            st.error("Failed to generate predictions. Please check the input data and model.")
 
-# Convert input to DataFrame
-df_input = pd.DataFrame(
-    np.array(user_data).T, 
-    columns=["mean_velo", "mean_vmov", "mean_hmov", "mean_spin", "mean_ext", "usage", "AutoPitchType"]
-)
-
-df_input["mean_hmov"] = df_input["mean_hmov"].abs()  # Absolute value for mean_hmov
-
-df_input = df_input[df_input['usage'] > 0]  # Remove zero usage rows
-
-if not df_input.empty:
-    df_input_expanded = pd.get_dummies(df_input.drop(columns=["usage"]), columns=["AutoPitchType"], drop_first=True)
-    df_input_expanded = sm.add_constant(df_input_expanded, has_constant='add')
-
-    # Ensure column order matches training data
-    all_columns = ss_model.model.exog_names
-    df_input_expanded = df_input_expanded.reindex(columns=all_columns, fill_value=0)
-
-    # Get whiff weight
-    whiff_weight = st.number_input("Whiff Weight Percentage:", value=0.75, min_value=0.0, max_value=1.0, step=0.01)
-
-    # Make predictions
-    ss_preds = ss_model.predict(df_input_expanded)
-    whiff_preds = whiff_model.predict(df_input_expanded)
-
-    # Standardize grades
-    ss_grades = np.round((ss_preds - ss_mean) / ss_std * 10 + 50).astype(int)
-    whiff_grades = np.round((whiff_preds - whiff_mean) / whiff_std * 10 + 50).astype(int)
-    overall_grades = np.round(whiff_weight * whiff_grades + (1 - whiff_weight) * ss_grades).astype(int)
-    arsenal_grade = np.round(np.sum(overall_grades * df_input['usage'])).astype(int)
-
-    # Display results
-    st.text(f"Arsenal Grade: {arsenal_grade}")
-    result_df = pd.DataFrame({
-        "Whiff Grade": whiff_grades,
-        "Sweet Spot Grade": ss_grades,
-        "Overall": overall_grades
-    })
-    st.table(result_df)
-else:
-    st.text("Error: Ensure Usage sums to 1.")
+if __name__ == "__main__":
+    main()
