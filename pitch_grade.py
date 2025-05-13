@@ -6,16 +6,24 @@ import statsmodels.api as sm
 # Load dataset
 @st.cache_data
 def load_data():
-    return pd.read_csv("model_df.csv")
+    df = pd.read_csv("model_df.csv")
+    df["mean_hmov"] = df["mean_hmov"].abs()  # Absolute value for mean_hmov
+    df.dropna(inplace=True)  # Drop rows with NA values
+    return df
 
 df = load_data()
 
 # Prepare the model
 y = df[['sweet_spot_rate', 'whiff_rate']]
 X = df[['mean_velo', 'mean_vmov', 'mean_hmov', 'mean_spin', 'mean_ext', 'AutoPitchType']]
-X['mean_hmov'] = X['mean_hmov'].abs()  # Absolute value for mean_hmov
+
+# One-hot encode AutoPitchType and add constant
 X = pd.get_dummies(X, columns=['AutoPitchType'], drop_first=True)
 X = sm.add_constant(X)
+
+# Ensure all data is numeric
+X = X.astype(float)
+y = y.astype(float)
 
 mod1 = sm.OLS(y, X).fit()
 
@@ -66,7 +74,7 @@ if not df_input.empty:
     df_input["mean_hmov"] = df_input["mean_hmov"].abs()  # Ensure absolute value
     df_input = pd.get_dummies(df_input, columns=["AutoPitchType"], drop_first=True)
     df_input = sm.add_constant(df_input, has_constant='add')
-    df_input = df_input[X.columns]  # Ensure same column order as training data
+    df_input = df_input.reindex(columns=X.columns, fill_value=0)  # Ensure same column order as training data
 
     # Whiff weight input
     whiff_weight = st.number_input("Whiff Weight Percentage:", value=0.75, min_value=0.0, max_value=1.0, step=0.01)
