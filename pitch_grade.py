@@ -67,6 +67,7 @@ df_input = pd.DataFrame(
     columns=["mean_velo", "mean_vmov", "mean_hmov", "mean_spin", "mean_ext", "usage", "AutoPitchType"]
 )
 
+df_input["usage"] = pd.to_numeric(df_input["usage"])  # Ensure usage is numeric
 df_input = df_input[df_input['usage'] > 0]  # Remove rows where usage is 0
 
 # One-hot encode AutoPitchType to match training data
