@@ -67,12 +67,14 @@ df_input = pd.DataFrame(
     columns=["mean_velo", "mean_vmov", "mean_hmov", "mean_spin", "mean_ext", "usage", "AutoPitchType"]
 )
 
-df_input["usage"] = pd.to_numeric(df_input["usage"])  # Ensure usage is numeric
+# Ensure all numeric columns are float
+df_input[["mean_velo", "mean_vmov", "mean_hmov", "mean_spin", "mean_ext", "usage"]] = df_input[["mean_velo", "mean_vmov", "mean_hmov", "mean_spin", "mean_ext", "usage"]].astype(float)
+df_input["mean_hmov"] = df_input["mean_hmov"].abs()  # Ensure absolute value
+
 df_input = df_input[df_input['usage'] > 0]  # Remove rows where usage is 0
 
 # One-hot encode AutoPitchType to match training data
 if not df_input.empty:
-    df_input["mean_hmov"] = df_input["mean_hmov"].abs()  # Ensure absolute value
     df_input = pd.get_dummies(df_input, columns=["AutoPitchType"], drop_first=True)
     df_input = sm.add_constant(df_input, has_constant='add')
     df_input = df_input.reindex(columns=X.columns, fill_value=0)  # Ensure same column order as training data
