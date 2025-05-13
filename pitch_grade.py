@@ -116,52 +116,65 @@ def main():
     st.title("Pitch Rate Predictor")
 
     # Dropdown options for AutoPitchType
-   # pitch_types = ["Curveball", "Cutter", "Four-Seam", "Sinker", "Slider", "Splitter"]
     pitch_types = ["Four-Seam", "Sinker", "Cutter", "Slider", "Curveball", "Changeup", "Splitter"]
 
+    # Initialize session state to store input data
+    if "input_data" not in st.session_state:
+        st.session_state.input_data = []
+
     # Input columns for up to 6 pitches
-    input_data = []
     for i in range(6):
         st.subheader(f"Pitch {i+1}")
         col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
             pitch_type = st.selectbox("AutoPitchType", pitch_types, key=f"pitch_type_{i}")
         with col2:
-            velocity = st.number_input("Velocity", value=0.0, key=f"velocity_{i}") # Changed default to 0
+            velocity = st.number_input("Velocity", value=0.0, key=f"velocity_{i}")
         with col3:
-            vmov = st.number_input("V Mov", value=0.0, key=f"vmov_{i}")  # Changed default to 0
+            vmov = st.number_input("V Mov", value=0.0, key=f"vmov_{i}")
         with col4:
-            hmov = st.number_input("H Mov", value=0.0, key=f"hmov_{i}")  # Changed default to 0
+            hmov = st.number_input("H Mov", value=0.0, key=f"hmov_{i}")
         with col5:
-            spin_rate = st.number_input("Spin Rate", value=0.0, key=f"spin_rate_{i}")  # Changed default to 0
-        extension = st.number_input("Extension", value=0.0, key=f"extension_{i}")  # Changed default to 0
+            spin_rate = st.number_input("Spin Rate", value=0.0, key=f"spin_rate_{i}")
+        extension = st.number_input("Extension", value=0.0, key=f"extension_{i}")
 
-        # Only include the pitch if at least one of the input values is not zero.
-        if velocity != 0 or vmov != 0 or hmov != 0 or spin_rate != 0 or extension != 0:
-            input_data.append({
-                "AutoPitchType": pitch_type,
-                "mean_velo": velocity,
-                "mean_vmov": vmov,
-                "mean_hmov": hmov,
-                "mean_spin": spin_rate,
-                "mean_ext": extension,
-            })
+        # Store input data in session state
+        st.session_state.input_data.append({
+            "AutoPitchType": pitch_type,
+            "mean_velo": velocity,
+            "mean_vmov": vmov,
+            "mean_hmov": hmov,
+            "mean_spin": spin_rate,
+            "mean_ext": extension,
+        })
 
-    # Create a DataFrame from the input data
-    input_df = pd.DataFrame(input_data)
-
-    # Predict rates and display results
+    # Predict rates and display results only when the button is clicked
     if st.button("Predict Rates"):
+        # Create a DataFrame from the input data in session state
+        input_df = pd.DataFrame(st.session_state.input_data)
+
+        # Filter out pitches with all zero values.
+        input_df = input_df[
+            (input_df["mean_velo"] != 0)
+            | (input_df["mean_vmov"] != 0)
+            | (input_df["mean_hmov"] != 0)
+            | (input_df["mean_spin"] != 0)
+            | (input_df["mean_ext"] != 0)
+        ]
         predictions_df = predict_rates(input_df)
-        if not predictions_df.empty: # Check if the predictions were successful
+        if not predictions_df.empty:
             st.subheader("Predicted Rates")
             # Rearrange columns for desired output
-            predictions_df = predictions_df[["Pitch", "Whiff Rate", "Sweet Spot Rate", "Whiff Grade", "Sweet Spot Grade"]]
-            st.dataframe(predictions_df,  use_container_width=True)
+            predictions_df = predictions_df[
+                ["Pitch", "Whiff Rate", "Sweet Spot Rate", "Whiff Grade", "Sweet Spot Grade"]
+            ]
+            st.dataframe(predictions_df, use_container_width=True)
         else:
-            st.error("Failed to generate predictions. Please check the input data and model.")
-
-
+            st.error(
+                "Failed to generate predictions. Please check the input data and model."
+            )
+        # Clear the session state after prediction
+        st.session_state.input_data = []
 
 if __name__ == "__main__":
     main()
