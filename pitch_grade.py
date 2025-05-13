@@ -116,7 +116,8 @@ def main():
     st.title("Pitch Rate Predictor")
 
     # Dropdown options for AutoPitchType
-    pitch_types = ["Curveball", "Cutter", "Four-Seam", "Sinker", "Slider", "Splitter"]
+   # pitch_types = ["Curveball", "Cutter", "Four-Seam", "Sinker", "Slider", "Splitter"]
+    pitch_types = ["Four-Seam", "Sinker", "Cutter", "Slider", "Curveball", "Changeup", "Splitter"]
 
     # Input columns for up to 6 pitches
     input_data = []
